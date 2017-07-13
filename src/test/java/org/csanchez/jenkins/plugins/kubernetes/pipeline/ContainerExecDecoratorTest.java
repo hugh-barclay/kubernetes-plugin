@@ -88,7 +88,7 @@ public class ContainerExecDecoratorTest {
 
         System.out.println("Created pod: " + pod.getMetadata().getName());
 
-        decorator = new ContainerExecDecorator(client, pod.getMetadata().getName(), image, client.getNamespace());
+        decorator = new ContainerExecDecorator(pod.getMetadata().getName(), image, client.getNamespace());
     }
 
     @Test(timeout = 10000)

@@ -137,8 +137,6 @@ public class KubernetesCloud extends Cloud {
     private int connectTimeout;
     private int readTimeout;
 
-    private transient KubernetesClient client;
-
     @DataBoundConstructor
     public KubernetesCloud(String name) {
         super(name);
@@ -304,16 +302,8 @@ public class KubernetesCloud extends Cloud {
 
         LOGGER.log(Level.FINE, "Building connection to Kubernetes host " + name + " URL " + serverUrl);
 
-        //if (client == null) {
-            //synchronized (this) {
-              //  if (client == null) {
-                    return new KubernetesFactoryAdapter(serverUrl, namespace, serverCertificate, credentialsId, skipTlsVerify, connectTimeout, readTimeout)
-                            .createClient();
-                //}
-            //}
-        //}
-        //return client;
-
+        return new KubernetesFactoryAdapter(serverUrl, namespace, serverCertificate, credentialsId, skipTlsVerify, connectTimeout, readTimeout)
+                .createClient();
     }
 
     private String getIdForLabel(Label label) {
@@ -641,8 +631,11 @@ public class KubernetesCloud extends Cloud {
             for (ContainerStatus containerStatus : containers) {
                 String containerName = containerStatus.getName();
 
+                KubernetesClient client = null;
+                
                 try {
-                    PrettyLoggable<String, LogWatch> tailingLines = connect().pods().inNamespace(namespace).withName(podId)
+                    client = connect();
+                    PrettyLoggable<String, LogWatch> tailingLines = client.pods().inNamespace(namespace).withName(podId)
                             .inContainer(containerStatus.getName()).tailingLines(30);
                     String log = tailingLines.getLog();
                     if (!StringUtils.isBlank(log)) {
@@ -655,6 +648,11 @@ public class KubernetesCloud extends Cloud {
                 } catch (UnrecoverableKeyException | CertificateEncodingException | NoSuchAlgorithmException
                         | KeyStoreException | IOException e) {
                     LOGGER.log(Level.SEVERE, "Could not get logs for pod " + podId, e);
+                }
+
+                if(client != null)
+                {
+                    client.close();
                 }
             }
         }
@@ -683,7 +681,9 @@ public class KubernetesCloud extends Cloud {
                         ? client.getNamespace()
                         : t.getNamespace();
 
-                pod = client.pods().inNamespace(namespace).create(pod);
+                client.pods().inNamespace(namespace).create(pod);
+                client.close();
+
                 LOGGER.log(Level.INFO, "Created Pod: {0}", podId);
 
                 // We need the pod to be running and connected before returning
@@ -697,9 +697,10 @@ public class KubernetesCloud extends Cloud {
 
                 // wait for Pod to be running
                 for (; i < j; i++) {
+                    client = connect();
                     LOGGER.log(Level.INFO, "Waiting for Pod to be scheduled ({1}/{2}): {0}", new Object[] {podId, i, j});
                     Thread.sleep(6000);
-                    pod = connect().pods().inNamespace(namespace).withName(podId).get();
+                    pod = client.pods().inNamespace(namespace).withName(podId).get();
                     if (pod == null) {
                         throw new IllegalStateException("Pod no longer exists: " + podId);
                     }
@@ -729,6 +730,7 @@ public class KubernetesCloud extends Cloud {
 
                         // Print the last lines of failed containers
                         logLastLines(terminatedContainers, podId, namespace, slave, errors);
+                        client.close();
                         throw new IllegalStateException("Containers are terminated with exit codes: " + errors);
                     }
 
@@ -737,8 +739,11 @@ public class KubernetesCloud extends Cloud {
                     }
 
                     if (validStates.contains(pod.getStatus().getPhase())) {
+                        client.close();
                         break;
                     }
+
+                    client.close();
                 }
                 String status = pod.getStatus().getPhase();
                 if (!validStates.contains(status)) {
@@ -787,7 +792,7 @@ public class KubernetesCloud extends Cloud {
             return true;
         }
 
-        KubernetesClient client = connect();
+        final KubernetesClient client = connect();
         PodList slaveList = client.pods().inNamespace(template.getNamespace()).withLabels(POD_LABEL).list();
         List<Pod> slaveListItems = slaveList.getItems();
 
@@ -798,6 +803,7 @@ public class KubernetesCloud extends Cloud {
         if (slaveListItems != null && containerCap <= slaveListItems.size()) {
             LOGGER.log(Level.INFO, "Total container cap of {0} reached, not provisioning: {1} running in namespace {2}",
                     new Object[] { containerCap, slaveListItems.size(), client.getNamespace() });
+            client.close();
             return false;
         }
 
@@ -806,8 +812,10 @@ public class KubernetesCloud extends Cloud {
                     "Template instance cap of {0} reached for template {1}, not provisioning: {2} running in namespace '{3}' with label '{4}'",
                     new Object[] { template.getInstanceCap(), template.getName(), slaveListItems.size(),
                             client.getNamespace(), label == null ? "" : label.toString() });
+            client.close();
             return false; // maxed out
         }
+        client.close();
         return true;
     }
 

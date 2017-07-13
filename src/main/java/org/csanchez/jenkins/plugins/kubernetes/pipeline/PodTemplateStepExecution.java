@@ -16,6 +16,7 @@ import hudson.AbortException;
 import hudson.model.Run;
 import hudson.slaves.Cloud;
 import jenkins.model.Jenkins;
+import io.fabric8.kubernetes.client.KubernetesClient;
 
 public class PodTemplateStepExecution extends AbstractStepExecutionImpl {
 
@@ -94,7 +95,9 @@ public class PodTemplateStepExecution extends AbstractStepExecutionImpl {
             namespace = kubernetesCloud.getNamespace();
         } else {
             try {
-                namespace = kubernetesCloud.connect().getNamespace();
+                final KubernetesClient client = kubernetesCloud.connect();
+                namespace = client.getNamespace();
+                client.close();
             } catch (Throwable t) {
                 //We can just ignore...
             }
@@ -130,7 +133,9 @@ public class PodTemplateStepExecution extends AbstractStepExecutionImpl {
             if (cloud instanceof KubernetesCloud) {
                 KubernetesCloud kubernetesCloud = (KubernetesCloud) cloud;
                 kubernetesCloud.removeTemplate(podTemplate);
-                kubernetesCloud.connect().pods().withName(podTemplate.getName()).delete();
+                final KubernetesClient client = kubernetesCloud.connect();
+                client.pods().withName(podTemplate.getName()).delete();
+                client.close();
             }
         }
     }

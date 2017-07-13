@@ -29,7 +29,6 @@ public class ContainerStepExecution extends AbstractStepExecutionImpl {
 
     private final ContainerStep step;
 
-    private transient KubernetesClient client;
     private transient ContainerExecDecorator decorator;
 
     ContainerStepExecution(ContainerStep step, StepContext context) {
@@ -46,18 +45,7 @@ public class ContainerStepExecution extends AbstractStepExecutionImpl {
 
         String containerName = step.getName();
 
-        Node node = getContext().get(Node.class);
-        if (! (node instanceof KubernetesSlave)) {
-            throw new AbortException(String.format("Node is not a Kubernetes node: %s", node.getNodeName()));
-        }
-        KubernetesSlave slave = (KubernetesSlave) node;
-        KubernetesCloud cloud = (KubernetesCloud) slave.getCloud();
-        if (cloud == null) {
-            throw new AbortException(String.format("Cloud does not exist: %s", slave.getCloudName()));
-        }
-        client = cloud.connect();
-
-        decorator = new ContainerExecDecorator(client, podName,  containerName, namespace);
+        decorator = new ContainerExecDecorator(podName,  containerName, namespace);
         getContext().newBodyInvoker()
                 .withContext(BodyInvoker
                         .mergeLauncherDecorators(getContext().get(LauncherDecorator.class), decorator))
@@ -69,7 +57,7 @@ public class ContainerStepExecution extends AbstractStepExecutionImpl {
     @Override
     public void stop(Throwable cause) throws Exception {
         LOGGER.log(Level.FINE, "Stopping container step.");
-        closeQuietly(client, decorator);
+        closeQuietly(decorator);
     }
 
     private void closeQuietly(Closeable... closeables) {

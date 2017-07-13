@@ -14,6 +14,7 @@ import java.util.logging.Logger;
 
 import hudson.Proc;
 import io.fabric8.kubernetes.client.dsl.ExecWatch;
+import io.fabric8.kubernetes.client.KubernetesClient;
 
 /**
  * Handle the liveness of the processes executed in containers, wait for them to finish and process exit codes.
@@ -27,6 +28,7 @@ public class ContainerExecProc extends Proc {
     private final CountDownLatch finished;
     private final ExecWatch watch;
     private final Callable<Integer> exitCode;
+    private final KubernetesClient client;
 
     /**
      * 
@@ -36,12 +38,13 @@ public class ContainerExecProc extends Proc {
      * @param exitCode
      *            a way to get the exit code
      */
-    public ContainerExecProc(ExecWatch watch, AtomicBoolean alive, CountDownLatch finished,
+    public ContainerExecProc(final KubernetesClient client, ExecWatch watch, AtomicBoolean alive, CountDownLatch finished,
             Callable<Integer> exitCode) {
         this.watch = watch;
         this.alive = alive;
         this.finished = finished;
         this.exitCode = exitCode;
+        this.client = client;
     }
 
     @Override
@@ -57,6 +60,7 @@ public class ContainerExecProc extends Proc {
             watch.getInput().write(EXIT.getBytes(StandardCharsets.UTF_8));
             watch.getInput().write(NEWLINE.getBytes(StandardCharsets.UTF_8));
             watch.getInput().flush();
+            client.close();
         } catch (IOException e) {
             LOGGER.log(Level.FINE, "Proc kill failed, ignoring", e);
         }

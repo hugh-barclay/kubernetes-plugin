@@ -149,9 +149,10 @@ public class KubernetesSlave extends AbstractCloudSlave {
                 listener.fatalError(msg);
                 return;
             }
-            KubernetesClient client = ((KubernetesCloud) cloud).connect();
+            final KubernetesClient client = ((KubernetesCloud) cloud).connect();
             PodResource<Pod, DoneablePod> pods = client.pods().inNamespace(namespace).withName(name);
             pods.delete();
+            client.close();
             String msg = String.format("Terminated Kubernetes instance for slave %s", name);
             LOGGER.log(Level.INFO, msg);
             listener.getLogger().println(msg);

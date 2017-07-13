@@ -42,6 +42,9 @@ import org.apache.commons.io.output.TeeOutputStream;
 
 import com.google.common.io.NullOutputStream;
 
+import org.csanchez.jenkins.plugins.kubernetes.KubernetesCloud;
+import org.csanchez.jenkins.plugins.kubernetes.KubernetesSlave;
+import hudson.AbortException;
 import hudson.Launcher;
 import hudson.LauncherDecorator;
 import hudson.Proc;
@@ -70,7 +73,6 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
     private static final String COOKIE_VAR = "JENKINS_SERVER_COOKIE";
     private static final Logger LOGGER = Logger.getLogger(ContainerExecDecorator.class.getName());
 
-    private final transient KubernetesClient client;
     private final String podName;
     private final String namespace;
     private final String containerName;
@@ -78,26 +80,29 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
     private transient ExecWatch watch;
     private transient ContainerExecProc proc;
 
-    public ContainerExecDecorator(KubernetesClient client, String podName,  String containerName, String namespace) {
-        this.client = client;
+    public ContainerExecDecorator(String podName,  String containerName, String namespace) {
         this.podName = podName;
         this.namespace = namespace;
         this.containerName = containerName;
     }
 
-    @Deprecated
-    public ContainerExecDecorator(KubernetesClient client, String podName,  String containerName, AtomicBoolean alive, CountDownLatch started, CountDownLatch finished, String namespace) {
-        this(client, podName, containerName, namespace);
-    }
+    private KubernetesClient connect(final Node node) {
+        try {
+            if (! (node instanceof KubernetesSlave)) {
+                throw new AbortException(String.format("Node is not a Kubernetes node: %s", node.getNodeName()));
+            }
 
-    @Deprecated
-    public ContainerExecDecorator(KubernetesClient client, String podName, String containerName, AtomicBoolean alive, CountDownLatch started, CountDownLatch finished) {
-        this(client, podName, containerName, null);
-    }
-
-    @Deprecated
-    public ContainerExecDecorator(KubernetesClient client, String podName, String containerName, String path, AtomicBoolean alive, CountDownLatch started, CountDownLatch finished) {
-        this(client, podName, containerName, null);
+            KubernetesSlave slave = (KubernetesSlave) node;
+            KubernetesCloud cloud = (KubernetesCloud) slave.getCloud();
+            if (cloud == null) {
+                throw new AbortException(String.format("Cloud does not exist: %s", slave.getCloudName()));
+            }
+            return cloud.connect();
+        }
+        catch(Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
@@ -105,7 +110,7 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
         return new Launcher.DecoratedLauncher(launcher) {
             @Override
             public Proc launch(ProcStarter starter) throws IOException {
-                if (!waitUntilContainerIsReady()) {
+                if (!waitUntilContainerIsReady(node)) {
                     throw new IOException("Failed to execute shell script inside container " +
                             "[" + containerName + "] of pod [" + podName + "]." +
                             " Timed out waiting for container to become ready!");
@@ -133,6 +138,7 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                 LOGGER.log(Level.FINEST, msg);
                 printStream.println(msg);
 
+                final KubernetesClient client = connect(node);
                 watch = client.pods().inNamespace(namespace).withName(podName).inContainer(containerName)
                         .redirectingInput().writingOutput(stream).writingError(stream).withTTY()
                         .usingListener(new ExecListener() {
@@ -177,10 +183,12 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                             String.format("cd \"%s\"%s", starter.pwd(), NEWLINE).getBytes(StandardCharsets.UTF_8));
                 }
                 doExec(watch, printStream, getCommands(starter));
-                proc = new ContainerExecProc(watch, alive, finished, new Callable<Integer>() {
+                proc = new ContainerExecProc(client, watch, alive, finished, new Callable<Integer>() {
                     @Override
                     public Integer call() {
-                        return exitCodeOutputStream.getExitCode();
+                        Integer i =  exitCodeOutputStream.getExitCode();
+                        client.close();
+                        return i;
                     }
                 });
                 return proc;
@@ -208,9 +216,10 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                 return false;
             }
 
-            private boolean waitUntilContainerIsReady() {
+            private boolean waitUntilContainerIsReady(final Node node) {
                 int i = 0;
                 int j = 10; // wait 60 seconds
+                final KubernetesClient client = connect(node);
                 Pod pod = client.pods().inNamespace(namespace).withName(podName).get();
 
                 if (pod == null) {
@@ -226,6 +235,7 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                         try {
                             Thread.sleep(6000);
                         } catch (InterruptedException e) {
+                            client.close();
                             return false;
                         }
                     }
@@ -236,6 +246,7 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                 }
 
                 if (isContainerReady(pod, containerName)) {
+                    client.close();
                     return true;
                 }
 
@@ -263,11 +274,15 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
 
                 try (Watch watch = client.pods().inNamespace(namespace).withName(podName).watch(podWatcher)) {
                     if (latch.await(CONTAINER_READY_TIMEOUT, TimeUnit.MINUTES)) {
+                        client.close();
                         return true;
                     }
                 } catch (InterruptedException e) {
+                    client.close();
                     return false;
                 }
+
+                client.close();
                 return false;
             }
         };
