@@ -304,15 +304,15 @@ public class KubernetesCloud extends Cloud {
 
         LOGGER.log(Level.FINE, "Building connection to Kubernetes host " + name + " URL " + serverUrl);
 
-        if (client == null) {
-            synchronized (this) {
-                if (client == null) {
-                    client = new KubernetesFactoryAdapter(serverUrl, namespace, serverCertificate, credentialsId, skipTlsVerify, connectTimeout, readTimeout)
+        //if (client == null) {
+            //synchronized (this) {
+              //  if (client == null) {
+                    return new KubernetesFactoryAdapter(serverUrl, namespace, serverCertificate, credentialsId, skipTlsVerify, connectTimeout, readTimeout)
                             .createClient();
-                }
-            }
-        }
-        return client;
+                //}
+            //}
+        //}
+        //return client;
 
     }
 
