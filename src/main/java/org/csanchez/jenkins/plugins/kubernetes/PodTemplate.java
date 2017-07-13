@@ -93,11 +93,11 @@ public class PodTemplate extends AbstractDescribableImpl<PodTemplate> implements
 
     private List<ContainerTemplate> containers = new ArrayList<ContainerTemplate>();
 
-    private final List<PodEnvVar> envVars = new ArrayList<PodEnvVar>();
+    private List<PodEnvVar> envVars = new ArrayList<PodEnvVar>();
 
     private List<PodAnnotation> annotations = new ArrayList<PodAnnotation>();
 
-    private final List<PodImagePullSecret> imagePullSecrets = new ArrayList<PodImagePullSecret>();
+    private List<PodImagePullSecret> imagePullSecrets = new ArrayList<PodImagePullSecret>();
 
     private transient List<ToolLocationNodeProperty> nodeProperties;
 

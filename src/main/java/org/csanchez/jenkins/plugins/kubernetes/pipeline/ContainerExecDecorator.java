@@ -64,7 +64,7 @@ import okhttp3.Response;
 public class ContainerExecDecorator extends LauncherDecorator implements Serializable, Closeable {
 
     private static final long serialVersionUID = 4419929753433397655L;
-    private static final long DEFAULT_CONTAINER_READY_TIMEOUT = 5;
+    private static final long DEFAULT_CONTAINER_READY_TIMEOUT = 10;
     private static final String CONTAINER_READY_TIMEOUT_SYSTEM_PROPERTY = ContainerExecDecorator.class.getName() + ".containerReadyTimeout";
     private static final long CONTAINER_READY_TIMEOUT = containerReadyTimeout();
     private static final String COOKIE_VAR = "JENKINS_SERVER_COOKIE";
